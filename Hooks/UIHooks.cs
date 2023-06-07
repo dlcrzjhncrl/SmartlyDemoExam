@@ -7,11 +7,14 @@ using TechTalk.SpecFlow.Infrastructure;
 using TechTalk.SpecFlow;
 using SmartlySpecflow.Utilities;
 using SmartlySpecflow.Drivers;
+using SpecFlowBDDAutomationFramework.Utility;
+using AventStack.ExtentReports.Gherkin.Model;
+using AventStack.ExtentReports;
 
 namespace SmartlySpecflow.Hooks
 {
     [Binding]
-    public sealed class UIHooks
+    public sealed class UIHooks: ExtentReport
     {
         // For additional details on SpecFlow hooks see http://go.specflow.org/doc-hooks
         private readonly FeatureContext _featureContext;
@@ -27,8 +30,39 @@ namespace SmartlySpecflow.Hooks
             _specflowOutputHelper = specFlowOutputHelper;
         }
 
+
+        [BeforeTestRun]
+        public static void BeforeTestRun()
+        {
+            Console.WriteLine("Running before test run...");
+            ExtentReportInit();
+        }
+
+        [AfterTestRun]
+        public static void AfterTestRun()
+        {
+            Console.WriteLine("Running after test run...");
+            ExtentReportTearDown();
+        }
+
+        [BeforeFeature]
+        public static void BeforeFeature(FeatureContext featureContext)
+        {
+            Console.WriteLine("Running before feature...");
+            _feature = _extentReports.CreateTest<Feature>(featureContext.FeatureInfo.Title);
+        }
+
+        [AfterFeature]
+        public static void AfterFeature()
+        {
+            Console.WriteLine("Running after feature...");
+        }
+
+
+
+
         [BeforeScenario]
-        public void BeforeScenario()
+        public void BeforeScenario(ScenarioContext scenarioContext)
         {
             var browser = AppSettings.Browser;
             var headless = bool.Parse(AppSettings.Headless);
@@ -41,28 +75,72 @@ namespace SmartlySpecflow.Hooks
             driver.Manage().Window.Maximize();
             driver.Navigate().GoToUrl(Url);
             _featureContext.FeatureContainer.RegisterInstanceAs(driver);
+
+            _scenario = _feature.CreateNode<Scenario>(scenarioContext.ScenarioInfo.Title);
         }
 
         [AfterScenario]
         public void AfterScenario()
         {
             IWebDriver driver = _objectContainer.Resolve<IWebDriver>();
-            //var LoginPage = new LoginPage(driver);
-            //LoginPage.Logout();
             driver.Quit();
         }
 
-        public void AfterStep()
+        [AfterStep]
+        public void AfterStep(ScenarioContext scenarioContext)
         {
-            IWrapsDriver wrapperAccess = (IWrapsDriver)_objectContainer.Resolve<IWebDriver>();
-            IWebDriver driver = wrapperAccess.WrappedDriver;
 
-            if (_scenarioContext.TestError != null)
+            Console.WriteLine("Running after step....");
+            string stepType = scenarioContext.StepContext.StepInfo.StepDefinitionType.ToString();
+            string stepName = scenarioContext.StepContext.StepInfo.Text;
+
+            var driver = _objectContainer.Resolve<IWebDriver>();
+
+            //When scenario passed
+            if (scenarioContext.TestError == null)
             {
-                var filename = Path.ChangeExtension(Path.Combine(_scenarioContext.ScenarioInfo.Title.Replace(" ", "_", StringComparison.InvariantCultureIgnoreCase)), "png");
-                var screenshot = ((ITakesScreenshot)driver).GetScreenshot();
-                screenshot.SaveAsFile(filename);
-                _specflowOutputHelper.AddAttachment(filename);
+                if (stepType == "Given")
+                {
+                    _scenario.CreateNode<Given>(stepName);
+                }
+                else if (stepType == "When")
+                {
+                    _scenario.CreateNode<When>(stepName);
+                }
+                else if (stepType == "Then")
+                {
+                    _scenario.CreateNode<Then>(stepName);
+                }
+                else if (stepType == "And")
+                {
+                    _scenario.CreateNode<And>(stepName);
+                }
+            }
+
+            //When scenario fails
+            if (scenarioContext.TestError != null)
+            {
+
+                if (stepType == "Given")
+                {
+                    _scenario.CreateNode<Given>(stepName).Fail(scenarioContext.TestError.Message,
+                        MediaEntityBuilder.CreateScreenCaptureFromPath(addScreenshot(driver, scenarioContext)).Build());
+                }
+                else if (stepType == "When")
+                {
+                    _scenario.CreateNode<When>(stepName).Fail(scenarioContext.TestError.Message,
+                        MediaEntityBuilder.CreateScreenCaptureFromPath(addScreenshot(driver, scenarioContext)).Build());
+                }
+                else if (stepType == "Then")
+                {
+                    _scenario.CreateNode<Then>(stepName).Fail(scenarioContext.TestError.Message,
+                        MediaEntityBuilder.CreateScreenCaptureFromPath(addScreenshot(driver, scenarioContext)).Build());
+                }
+                else if (stepType == "And")
+                {
+                    _scenario.CreateNode<And>(stepName).Fail(scenarioContext.TestError.Message,
+                        MediaEntityBuilder.CreateScreenCaptureFromPath(addScreenshot(driver, scenarioContext)).Build());
+                }
             }
         }
     }
